@@ -175,7 +175,7 @@ def load_pdf(path: str | Path) -> fitz.Document:
 
 
 def save_pdf(doc: fitz.Document, path: str | Path) -> None:
-    doc.save(str(path), incremental=False, encryption=fitz.PDF_ENCRYPT_KEEP)
+    doc.save(str(path), incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
 
 
 def find_spans(
