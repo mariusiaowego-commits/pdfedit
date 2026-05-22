@@ -39,6 +39,8 @@ class FontCache:
         # Fallback font file path (used when primary font is missing glyphs)
         self._fallback_fontfile = fallback_fontfile or self._find_chinese_fallback()
         self._fallback_name: str | None = None
+        # Track which pages have been preloaded (to avoid re-preloading after redaction)
+        self._preloaded_pages: set[int] = set()
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -125,36 +127,42 @@ class FontCache:
     # ------------------------------------------------------------------
 
     def get_fallback_name(self, page: fitz.Page) -> str:
-        """Get or register the fallback font on this page."""
-        if self._fallback_name is None and self._fallback_fontfile:
-            self._fallback_name = f"pdfedit_fallback_{id(self)}"
-        if self._fallback_name:
-            # Register if not already
-            for xref, _, _, base_font, *_ in page.get_fonts():
-                if base_font == self._fallback_name:
-                    return self._fallback_name
-            page.insert_font(fontname=self._fallback_name, fontfile=self._fallback_fontfile)
-            return self._fallback_name
-        raise RuntimeError("No fallback font available for missing glyphs")
+        """Register the fallback font on this page and return the registered name.
+
+        IMPORTANT: always registers with a fresh unique name because PyMuPDF
+        invalidates name→buffer mappings after apply_redactions().
+        Does NOT check get_fonts() first — that call itself can mutate PyMuPDF state.
+        """
+        if self._fallback_fontfile is None:
+            raise RuntimeError("No fallback font available for missing glyphs")
+        with open(self._fallback_fontfile, "rb") as f:
+            fb = f.read()
+        import uuid
+        name = f"pdfedit_fb_{uuid.uuid4().hex[:8]}"
+        page.insert_font(fontname=name, fontbuffer=fb)
+        return name
 
     def get_registered_name(
         self, original_fontname: str, original_xref: int, page: fitz.Page
     ) -> str:
-        """Register the font on `page` if not already done, return the registered name."""
-        key = (original_xref, page.number)
-        if key in self._name_map:
-            return self._name_map[key]
+        """Register the font on `page` and return a fresh registered name.
 
-        font_buf = self._extract_font_buffer(original_xref, page.number)
-        if font_buf is None:
+        Uses doc.extract_font() on every call — no caching of the font name,
+        because PyMuPDF's internal font cache is invalidated by apply_redactions().
+        """
+        # extract_font() is reliable even after redactions (unlike xref_stream)
+        name, ext, _, font_bytes = self.doc.extract_font(original_xref)
+        if not font_bytes:
             raise RuntimeError(
                 f"Cannot extract font buffer for '{original_fontname}' (xref={original_xref}). "
                 "This PDF may use a font format not supported for text replacement."
             )
 
-        custom_name = f"pdfedit_{original_xref}_p{page.number}"
-        page.insert_font(fontname=custom_name, fontbuffer=font_buf)
-        self._name_map[key] = custom_name
+        # Always use a fresh unique name — PyMuPDF invalidates the name→buffer
+        # mapping after apply_redactions() even if the buffer bytes are the same
+        import uuid
+        custom_name = f"pdfedit_{original_xref}_{uuid.uuid4().hex[:8]}"
+        page.insert_font(fontname=custom_name, fontbuffer=font_bytes)
         return custom_name
 
 
@@ -285,17 +293,11 @@ def replace_span(
     page = doc[page_idx]
     orig_rect = fitz.Rect(span["bbox"])
 
-    # Step 1: preload ALL fonts on this page BEFORE any redactions
-    # (apply_redactions() can invalidate xref streams after doc is modified)
-    if font_cache is None:
-        font_cache = FontCache(doc)
-    font_cache.preload_page(page)
-
-    # Step 2: redact old glyphs with white fill
+    # Step 1: redact old glyphs with white fill
     page.add_redact_annot(orig_rect, fill=(1, 1, 1))
     page.apply_redactions()
 
-    # Step 3: find original font xref on this page
+    # Step 2: find original font xref on this page
     font_xref = None
     for xref, _, subtype, base_font, *_ in page.get_fonts():
         if base_font == span["font"]:
@@ -305,12 +307,13 @@ def replace_span(
     if font_xref is None:
         raise RuntimeError(f"Font '{span['font']}' not found in PDF fonts.")
 
+    # Register original font (fresh name each time via extract_font + unique name)
     registered_name = font_cache.get_registered_name(span["font"], font_xref, page)
     fontsize = span["size"]
     color = fill_color if fill_color is not None else _unpack_color(span.get("color", 0))
     insert_pos = fitz.Point(orig_rect.x0, orig_rect.y1)
 
-    # Step 4: decide which font to use for new text
+    # Step 3: decide which font to use for new text
     use_fallback = _needs_fallback(new_text, span["font"], registered_name)
     actual_font = font_cache.get_fallback_name(page) if use_fallback else registered_name
 
