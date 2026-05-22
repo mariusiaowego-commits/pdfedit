@@ -1,5 +1,18 @@
 # pdfedit vibe coding log
 
+## 2026-05-22 — Git 仓库初始化
+
+### 完成
+- `git init` 初始化仓库
+- 添加 remote origin（HTTPS pushurl 绕过 SSH 代理）
+- 推送所有 commit 到 GitHub
+
+### commit
+- `7c6f5c0` - docs: add AGENTS.md
+- `9b5a9b1` - docs: add vibe-coding-log.md
+
+---
+
 ## 2026-05-22 — FontCache 重构 + 同页多次替换 + 合并版 PDF
 
 ### Bug
