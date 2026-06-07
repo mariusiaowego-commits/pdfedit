@@ -84,8 +84,11 @@ pdfedit/
 │       └── core.py          # 核心替换逻辑
 ├── cmd_replace_成绩.py       # 替换表头"成绩→学号"
 ├── cmd_replace_套数编号.py   # 替换标题"30套→1~30套"
+├── produce_合并版.py         # 端到端冒烟脚本（一次性跑两项替换）
 ├── test_replace.py          # 最小化测试
-└── output/                   # 输出成品（本地保留）
+├── STATUS.md                # 阶段记录
+├── vibe-coding-log.md       # 调试/坑点/教训日志
+└── output/                   # 输出成品（本地保留，.gitignore）
 ```
 
 ---
