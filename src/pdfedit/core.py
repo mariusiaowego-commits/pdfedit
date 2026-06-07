@@ -175,7 +175,13 @@ def load_pdf(path: str | Path) -> fitz.Document:
 
 
 def save_pdf(doc: fitz.Document, path: str | Path) -> None:
-    doc.save(str(path), incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+    # PyMuPDF's incremental=True requires the output path to be the original
+    # file (it's a PDF incremental update). When callers pass a different path
+    # (e.g. /tmp/...) we must fall back to a full rewrite.
+    if str(path) == doc.name:
+        doc.save(str(path), incremental=True, encryption=fitz.PDF_ENCRYPT_KEEP)
+    else:
+        doc.save(str(path), encryption=fitz.PDF_ENCRYPT_KEEP)
 
 
 def find_spans(
