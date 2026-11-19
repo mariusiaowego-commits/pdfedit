@@ -2,9 +2,6 @@
 
 PDF 文字 in-place 替换工具，保留原始排版和字体。
 
-## 项目路径
-`~/dev/pdfedit`
-
 ## 技术栈
 - Python 3（`python3`，系统默认）
 - PyMuPDF 1.27.1
